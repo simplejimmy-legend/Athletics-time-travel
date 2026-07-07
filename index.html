@@ -3,10 +3,23 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Spoiler-Free BBC Athletics</title>
+    <title>Spoiler-Free Athletics Dashboard</title>
+    
+    <!-- Link to the manifest file (Crucial for Android App Install) -->
     <link rel="manifest" href="manifest.json">
+    
+    <!-- Android Home Screen Icon Shortcut tags -->
+    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+    <link rel="icon" type="image/png" sizes="512x512" href="icon-512.png">
+    
+    <!-- Theme color for the Android status bar -->
+    <meta name="theme-color" content="#1c1c1e">
+
+    <!-- iOS Compatibility tags -->
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="apple-touch-icon" href="icon-192.png">
+    
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -48,7 +61,7 @@
 
     <!-- MAIN DASHBOARD -->
     <div id="dashboard" style="display:none;">
-        <h2>🏃 BBC Athletics Feed</h2>
+        <h2>🏃 Athletics News Feed</h2>
         <p id="status">Loading data...</p>
         <div id="news-feed"></div>
     </div>
@@ -69,47 +82,76 @@
             document.getElementById('gatekeeper').style.display = 'none';
             document.getElementById('dashboard').style.display = 'block';
 
-            // BBC Sport Athletics Feed URL processed via free open proxy
-            const bbcFeed = "https://feeds.bbci.co.uk/sport/athletics/rss.xml";
-            const apiUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(bbcFeed)}`;
+            // Combined list of multi-source athletics feeds
+            const feeds = [
+                "https://feeds.bbci.co.uk/sport/athletics/rss.xml",
+                "https://athleticsweekly.com/feed",
+                "https://worldathletics.org/news/rss",
+                "https://www.theguardian.com/sport/athletics/rss"
+            ];
 
-            fetch(apiUrl)
+            const container = document.getElementById('news-feed');
+            document.getElementById('status').innerText = `Loading feeds securely...`;
+
+            // Map each feed URL to an rss2json API call promise
+            const fetchPromises = feeds.map(feed => 
+                fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(feed)}`)
                 .then(res => res.json())
-                .then(data => {
-                    const container = document.getElementById('news-feed');
-                    document.getElementById('status').innerText = `Showing safe articles up to: ${cutoffDate.toLocaleString()}`;
-                    
-                    if (!data.items || data.items.length === 0) {
-                        container.innerHTML = "<p>No articles found.</p>";
-                        return;
-                    }
-
-                    data.items.forEach(item => {
-                        // RSS2JSON converts pubDate to standard 'YYYY-MM-DD HH:MM:SS' format UTC
-                        const articleDate = new Date(item.pubDate.replace(' ', 'T') + 'Z'); 
-
-                        // THE SPOILER FILTER
-                        if (articleDate <= cutoffDate) {
-                            const card = document.createElement('div');
-                            card.className = 'card';
-                            card.innerHTML = `
-                                <h3>${item.title}</h3>
-                                <p>${item.description || ''}</p>
-                                <p><em>Published: ${articleDate.toLocaleString()}</em></p>
-                                <a href="${item.link}" target="_blank">Read Article ↗</a>
-                            `;
-                            container.appendChild(card);
-                        }
-                    });
-
-                    if(container.children.length === 0) {
-                        container.innerHTML = "<p>All recent articles are from after your cutoff time. Safe from spoilers!</p>";
-                    }
+                .then(data => data.items || [])
+                .catch(err => { 
+                    console.error("Error fetching feed: " + feed); 
+                    return []; 
                 })
-                .catch(err => {
-                    document.getElementById('status').innerText = "Error loading BBC feed.";
-                    console.error(err);
+            );
+
+            // Wait for all websites to respond
+            Promise.all(fetchPromises).then(allFeedResults => {
+                // Flatten the array of arrays into one single list of articles
+                let allArticles = allFeedResults.flat();
+
+                // Sort all articles globally by date (newest first)
+                allArticles.sort((a, b) => {
+                    const dateA = new Date(a.pubDate.replace(' ', 'T') + 'Z');
+                    const dateB = new Date(b.pubDate.replace(' ', 'T') + 'Z');
+                    return dateB - dateA;
                 });
+
+                container.innerHTML = ''; // Clear layout context
+                document.getElementById('status').innerText = `Showing safe articles up to: ${cutoffDate.toLocaleString()}`;
+
+                let visibleCount = 0;
+
+                allArticles.forEach(item => {
+                    // Standardizing RSS2JSON dates into browser readable strings
+                    const articleDate = new Date(item.pubDate.replace(' ', 'T') + 'Z'); 
+
+                    // THE SPOILER FILTER
+                    if (articleDate <= cutoffDate) {
+                        visibleCount++;
+                        
+                        // Try to cleanly determine the news brand source name
+                        let sourceName = "Athletics News";
+                        if (item.link.includes("bbc.co.uk")) sourceName = "BBC Sport";
+                        else if (item.link.includes("athleticsweekly.com")) sourceName = "Athletics Weekly";
+                        else if (item.link.includes("worldathletics.org")) sourceName = "World Athletics";
+                        else if (item.link.includes("theguardian.com")) sourceName = "The Guardian";
+
+                        const card = document.createElement('div');
+                        card.className = 'card';
+                        card.innerHTML = `
+                            <h3>${item.title}</h3>
+                            <p>${item.description || ''}</p>
+                            <p><em>Source: ${sourceName} | Published: ${articleDate.toLocaleString()}</em></p>
+                            <a href="${item.link}" target="_blank">Read Article ↗</a>
+                        `;
+                        container.appendChild(card);
+                    }
+                });
+
+                if(visibleCount === 0) {
+                    container.innerHTML = "<p>All recent articles are from after your cutoff time. Safe from spoilers!</p>";
+                }
+            });
         }
     </script>
 </body>
