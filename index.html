@@ -13,15 +13,15 @@
     <link rel="icon" type="image/png" sizes="512x512" href="icon-512.png">
     
     <!-- Theme color for the Android status bar -->
-    <meta name="theme-color" content="#1c1c1e">
+    <meta name="theme-color" content="#f4f4f6">
 
     <!-- iOS Compatibility tags -->
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <link rel="apple-touch-icon" href="icon-192.png">
     
     <style>
-                body {
+        body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             margin: 0; padding: 15px; background: #ffffff; color: #1a1a1a;
         }
@@ -49,7 +49,7 @@
         .card h3 { margin: 0 0 10px 0; font-size: 18px; color: #000000; }
         .card a { color: #005bc5; text-decoration: none; font-weight: bold; display: inline-block; margin-top: 10px; }
         .card p { margin: 5px 0; color: #555; font-size: 14px; }
-</style>
+    </style>
 </head>
 <body>
 
@@ -84,20 +84,33 @@
             document.getElementById('gatekeeper').style.display = 'none';
             document.getElementById('dashboard').style.display = 'block';
 
-            // Combined list of multi-source athletics feeds
+            // Mix of athletics-specific AND general sports feeds
             const feeds = [
+                // Dedicated Athletics Feeds
                 "https://feeds.bbci.co.uk/sport/athletics/rss.xml",
                 "https://athleticsweekly.com/feed",
                 "https://worldathletics.org/news/rss",
                 "https://www.theguardian.com/sport/athletics/rss",
                 "http://uka.org.uk/feed",
-                "http://runblogrun.com/feed"
+                "http://runblogrun.com/feed",
+                "https://www.watchathletics.com/rss/news/",
+                
+                // Broad Sports Feeds (Filtered by keywords below)
+                "https://www.skysports.com/rss/12040",
+                "https://www.independent.co.uk/sport/rss"
+            ];
+
+            // Keywords to identify athletics articles from broad sports feeds
+            const athleticsKeywords = [
+                "athletics", "track and field", "marathon", "sprint", "100m", "200m", "400m", 
+                "800m", "1500m", "relay", "hurdles", "steeplechase", "long jump", "triple jump", 
+                "high jump", "pole vault", "shot put", "discus", "javelin", "hammer throw", 
+                "decathlon", "heptathlon", "hodgkinson", "kerr", "hudson-smith", "asher-smith"
             ];
 
             const container = document.getElementById('news-feed');
             document.getElementById('status').innerText = `Loading feeds securely...`;
 
-            // Map each feed URL to an rss2json API call promise
             const fetchPromises = feeds.map(feed => 
                 fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(feed)}`)
                 .then(res => res.json())
@@ -108,9 +121,7 @@
                 })
             );
 
-            // Wait for all websites to respond
             Promise.all(fetchPromises).then(allFeedResults => {
-                // Flatten the array of arrays into one single list of articles
                 let allArticles = allFeedResults.flat();
 
                 // Sort all articles globally by date (newest first)
@@ -120,30 +131,42 @@
                     return dateB - dateA;
                 });
 
-                container.innerHTML = ''; // Clear layout context
+                container.innerHTML = ''; 
                 document.getElementById('status').innerText = `Showing safe articles up to: ${cutoffDate.toLocaleString()}`;
 
                 let visibleCount = 0;
 
                 allArticles.forEach(item => {
-                    // Standardizing RSS2JSON dates into browser readable strings
                     const articleDate = new Date(item.pubDate.replace(' ', 'T') + 'Z'); 
+                    const titleText = (item.title || "").toLowerCase();
+                    const descText = (item.description || "").toLowerCase();
+                    const fullText = titleText + " " + descText;
 
-                    // THE SPOILER FILTER
-                    if (articleDate <= cutoffDate) {
+                    // CHECK 1: Is this explicitly from an athletics feed OR does it mention athletics keywords?
+                    const isAthleticsFeed = item.link.includes("athletics") || item.link.includes("uka.org") || item.link.includes("runblogrun");
+                    const matchesKeyword = athleticsKeywords.some(keyword => fullText.includes(keyword));
+
+                    // CHECK 2: THE SPOILER FILTER (Must pass time restriction)
+                    if ((isAthleticsFeed || matchesKeyword) && articleDate <= cutoffDate) {
                         visibleCount++;
                         
-                        // Try to cleanly determine the news brand source name
-                        let sourceName = "Athletics News";
+                        // Determine the source brand name
+                        let sourceName = "General Sport";
                         if (item.link.includes("bbc.co.uk")) sourceName = "BBC Sport";
                         else if (item.link.includes("athleticsweekly.com")) sourceName = "Athletics Weekly";
                         else if (item.link.includes("worldathletics.org")) sourceName = "World Athletics";
                         else if (item.link.includes("theguardian.com")) sourceName = "The Guardian";
+                        else if (item.link.includes("uka.org.uk")) sourceName = "UK Athletics";
+                        else if (item.link.includes("runblogrun.com")) sourceName = "RunBlogRun";
+                        else if (item.link.includes("skysports.com")) sourceName = "Sky Sports";
+                        else if (item.link.includes("independent.co.uk")) sourceName = "The Independent";
+                        else if (item.link.includes("watchathletics.com")) sourceName = "Watch Athletics";
 
                         const card = document.createElement('div');
                         card.className = 'card';
                         card.innerHTML = `
-                            <h3>${item.title}</h3>
+                            <span style="background: #005bc5; color: #fff; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; text-transform: uppercase;">Athletics</span>
+                            <h3 style="margin-top: 8px;">${item.title}</h3>
                             <p>${item.description || ''}</p>
                             <p><em>Source: ${sourceName} | Published: ${articleDate.toLocaleString()}</em></p>
                             <a href="${item.link}" target="_blank">Read Article ↗</a>
@@ -160,3 +183,7 @@
     </script>
 </body>
 </html>
+
+         
+
+                
