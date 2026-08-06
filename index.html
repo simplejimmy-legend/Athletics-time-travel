@@ -80,13 +80,16 @@
             
             const cutoffDate = new Date(dateInputValue);
             
+            // Calculate 1 month prior to the cutoff date
+            const oneMonthPriorDate = new Date(cutoffDate);
+            oneMonthPriorDate.setMonth(oneMonthPriorDate.getMonth() - 1);
+            
             // UI Transition
             document.getElementById('gatekeeper').style.display = 'none';
             document.getElementById('dashboard').style.display = 'block';
 
-            // Mix of athletics-specific AND general sports feeds
+            // Feeds list
             const feeds = [
-                // Dedicated Athletics Feeds
                 "https://feeds.bbci.co.uk/sport/athletics/rss.xml",
                 "https://athleticsweekly.com/feed",
                 "https://worldathletics.org/news/rss",
@@ -94,13 +97,10 @@
                 "http://uka.org.uk/feed",
                 "http://runblogrun.com/feed",
                 "https://www.watchathletics.com/rss/news/",
-                
-                // Broad Sports Feeds (Filtered by keywords below)
                 "https://www.skysports.com/rss/12040",
                 "https://www.independent.co.uk/sport/rss"
             ];
 
-            // Keywords to identify athletics articles from broad sports feeds
             const athleticsKeywords = [
                 "athletics", "track and field", "marathon", "sprint", "100m", "200m", "400m", 
                 "800m", "1500m", "relay", "hurdles", "steeplechase", "long jump", "triple jump", 
@@ -124,7 +124,6 @@
             Promise.all(fetchPromises).then(allFeedResults => {
                 let allArticles = allFeedResults.flat();
 
-                // Sort all articles globally by date (newest first)
                 allArticles.sort((a, b) => {
                     const dateA = new Date(a.pubDate.replace(' ', 'T') + 'Z');
                     const dateB = new Date(b.pubDate.replace(' ', 'T') + 'Z');
@@ -132,7 +131,7 @@
                 });
 
                 container.innerHTML = ''; 
-                document.getElementById('status').innerText = `Showing safe articles up to: ${cutoffDate.toLocaleString()}`;
+                document.getElementById('status').innerText = `Showing articles between ${oneMonthPriorDate.toLocaleDateString()} and ${cutoffDate.toLocaleString()}`;
 
                 let visibleCount = 0;
 
@@ -142,22 +141,19 @@
                     const descText = (item.description || "").toLowerCase();
                     const fullText = titleText + " " + descText;
 
-                    // CHECK 1: Is this explicitly from an athletics feed OR does it mention athletics keywords?
                     const isAthleticsFeed = item.link.includes("athletics") || item.link.includes("uka.org") || item.link.includes("runblogrun");
                     const matchesKeyword = athleticsKeywords.some(keyword => fullText.includes(keyword));
 
-                    // CHECK 2: THE SPOILER FILTER (Must pass time restriction)
-                    if ((isAthleticsFeed || matchesKeyword) && articleDate <= cutoffDate) {
+                    // SPOILER & 1-MONTH RANGE FILTER
+                    if ((isAthleticsFeed || matchesKeyword) && articleDate <= cutoffDate && articleDate >= oneMonthPriorDate) {
                         visibleCount++;
                         
-                        // Determine the source brand name
                         let sourceName = "General Sport";
                         if (item.link.includes("bbc.co.uk")) sourceName = "BBC Sport";
                         else if (item.link.includes("athleticsweekly.com")) sourceName = "Athletics Weekly";
                         else if (item.link.includes("worldathletics.org")) sourceName = "World Athletics";
                         else if (item.link.includes("theguardian.com")) sourceName = "The Guardian";
                         else if (item.link.includes("uka.org.uk")) sourceName = "UK Athletics";
-                        else if (item.link.includes("runblogrun.com")) sourceName = "RunBlogRun";
                         else if (item.link.includes("skysports.com")) sourceName = "Sky Sports";
                         else if (item.link.includes("independent.co.uk")) sourceName = "The Independent";
                         else if (item.link.includes("watchathletics.com")) sourceName = "Watch Athletics";
@@ -176,14 +172,10 @@
                 });
 
                 if(visibleCount === 0) {
-                    container.innerHTML = "<p>All recent articles are from after your cutoff time. Safe from spoilers!</p>";
+                    container.innerHTML = "<p>No articles found within the 1-month window prior to your cutoff time. Safe from spoilers!</p>";
                 }
             });
         }
     </script>
 </body>
 </html>
-
-         
-
-                
