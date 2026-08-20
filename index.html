@@ -74,6 +74,19 @@
             navigator.serviceWorker.register('./sw.js').catch(err => console.log(err));
         }
 
+        // Robust date parser to handle all RSS date formats
+        function parseRSSDate(dateStr) {
+            if (!dateStr) return new Date(0);
+            // Replace space between date and time with 'T' if present
+            let formatted = dateStr.trim().replace(' ', 'T');
+            if (!formatted.endsWith('Z') && !formatted.includes('+')) {
+                formatted += 'Z';
+            }
+            const parsed = new Date(formatted);
+            // Fallback to standard Date parse if ISO replacement produced NaN
+            return isNaN(parsed.getTime()) ? new Date(dateStr) : parsed;
+        }
+
         function unlockAndLoad() {
             const dateInputValue = document.getElementById('cutoff-date').value;
             if(!dateInputValue) return alert("Please select a date and time!");
@@ -88,13 +101,12 @@
             document.getElementById('gatekeeper').style.display = 'none';
             document.getElementById('dashboard').style.display = 'block';
 
-            // Feeds list
+            // Feeds list (all enforcing HTTPS)
             const feeds = [
                 "https://feeds.bbci.co.uk/sport/athletics/rss.xml",
                 "https://athleticsweekly.com/feed",
                 "https://worldathletics.org/news/rss",
                 "https://www.theguardian.com/sport/athletics/rss",
-                "http://uka.org.uk/feed",
                 "https://www.watchathletics.com/rss/news/",
                 "https://www.skysports.com/rss/12040",
                 "https://www.independent.co.uk/sport/rss"
@@ -113,9 +125,9 @@
             const fetchPromises = feeds.map(feed => 
                 fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(feed)}`)
                 .then(res => res.json())
-                .then(data => data.items || [])
+                .then(data => (data && data.items) ? data.items : [])
                 .catch(err => { 
-                    console.error("Error fetching feed: " + feed); 
+                    console.error("Error fetching feed: " + feed, err); 
                     return []; 
                 })
             );
@@ -123,9 +135,10 @@
             Promise.all(fetchPromises).then(allFeedResults => {
                 let allArticles = allFeedResults.flat();
 
+                // Safely sort using parseRSSDate
                 allArticles.sort((a, b) => {
-                    const dateA = new Date(a.pubDate.replace(' ', 'T') + 'Z');
-                    const dateB = new Date(b.pubDate.replace(' ', 'T') + 'Z');
+                    const dateA = parseRSSDate(a.pubDate);
+                    const dateB = parseRSSDate(b.pubDate);
                     return dateB - dateA;
                 });
 
@@ -135,27 +148,30 @@
                 let visibleCount = 0;
 
                 allArticles.forEach(item => {
-                    const articleDate = new Date(item.pubDate.replace(' ', 'T') + 'Z'); 
+                    const articleDate = parseRSSDate(item.pubDate); 
                     const titleText = (item.title || "").toLowerCase();
                     const descText = (item.description || "").toLowerCase();
                     const fullText = titleText + " " + descText;
 
-                    const isAthleticsFeed = item.link.includes("athletics") || item.link.includes("uka.org") || item.link.includes("runblogrun");
+                    const itemLink = item.link || "";
+                    const isAthleticsFeed = itemLink.includes("athletics") || itemLink.includes("runblogrun");
                     const matchesKeyword = athleticsKeywords.some(keyword => fullText.includes(keyword));
 
+                    // Check if date parsing succeeded
+                    const isValidDate = !isNaN(articleDate.getTime());
+
                     // SPOILER & 1-MONTH RANGE FILTER
-                    if ((isAthleticsFeed || matchesKeyword) && articleDate <= cutoffDate && articleDate >= oneMonthPriorDate) {
+                    if (isValidDate && (isAthleticsFeed || matchesKeyword) && articleDate <= cutoffDate && articleDate >= oneMonthPriorDate) {
                         visibleCount++;
                         
                         let sourceName = "General Sport";
-                        if (item.link.includes("bbc.co.uk")) sourceName = "BBC Sport";
-                        else if (item.link.includes("athleticsweekly.com")) sourceName = "Athletics Weekly";
-                        else if (item.link.includes("worldathletics.org")) sourceName = "World Athletics";
-                        else if (item.link.includes("theguardian.com")) sourceName = "The Guardian";
-                        else if (item.link.includes("uka.org.uk")) sourceName = "UK Athletics";
-                        else if (item.link.includes("skysports.com")) sourceName = "Sky Sports";
-                        else if (item.link.includes("independent.co.uk")) sourceName = "The Independent";
-                        else if (item.link.includes("watchathletics.com")) sourceName = "Watch Athletics";
+                        if (itemLink.includes("bbc.co.uk")) sourceName = "BBC Sport";
+                        else if (itemLink.includes("athleticsweekly.com")) sourceName = "Athletics Weekly";
+                        else if (itemLink.includes("worldathletics.org")) sourceName = "World Athletics";
+                        else if (itemLink.includes("theguardian.com")) sourceName = "The Guardian";
+                        else if (itemLink.includes("skysports.com")) sourceName = "Sky Sports";
+                        else if (itemLink.includes("independent.co.uk")) sourceName = "The Independent";
+                        else if (itemLink.includes("watchathletics.com")) sourceName = "Watch Athletics";
 
                         const card = document.createElement('div');
                         card.className = 'card';
@@ -164,7 +180,7 @@
                             <h3 style="margin-top: 8px;">${item.title}</h3>
                             <p>${item.description || ''}</p>
                             <p><em>Source: ${sourceName} | Published: ${articleDate.toLocaleString()}</em></p>
-                            <a href="${item.link}" target="_blank">Read Article ↗</a>
+                            <a href="${itemLink}" target="_blank">Read Article ↗</a>
                         `;
                         container.appendChild(card);
                     }
