@@ -159,10 +159,10 @@
                     visibleCount++;
                     
                     let sourceName = "Athletics News";
-                    if (itemLink.includes("bbc.co.uk")) sourceName = "BBC Sport";
-                    else if (itemLink.includes("athleticsweekly.com")) sourceName = "Athletics Weekly";
-                    else if (itemLink.includes("worldathletics.org")) sourceName = "World Athletics";
-                    else if (itemLink.includes("theguardian.com")) sourceName = "The Guardian";
+if (itemLink.includes("bbc.co.uk") || itemLink.includes("news.google.com")) sourceName = "BBC Sport";
+else if (itemLink.includes("athleticsweekly.com")) sourceName = "Athletics Weekly";
+else if (itemLink.includes("worldathletics.org")) sourceName = "World Athletics";
+else if (itemLink.includes("theguardian.com")) sourceName = "The Guardian";
 
                     const card = document.createElement('div');
                     card.className = 'card';
