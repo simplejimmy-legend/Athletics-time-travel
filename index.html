@@ -5,17 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Spoiler-Free Athletics Dashboard</title>
     
-    <!-- Link to the manifest file (Crucial for Android App Install) -->
     <link rel="manifest" href="manifest.json">
-    
-    <!-- Android Home Screen Icon Shortcut tags -->
     <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
     <link rel="icon" type="image/png" sizes="512x512" href="icon-512.png">
-    
-    <!-- Theme color for the Android status bar -->
     <meta name="theme-color" content="#f4f4f6">
 
-    <!-- iOS Compatibility tags -->
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <link rel="apple-touch-icon" href="icon-192.png">
@@ -69,47 +63,59 @@
     </div>
 
     <script>
-        // Register PWA service worker
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.register('./sw.js').catch(err => console.log(err));
         }
 
-        // Robust date parser to handle all RSS date formats
-        function parseRSSDate(dateStr) {
-            if (!dateStr) return new Date(0);
-            // Replace space between date and time with 'T' if present
-            let formatted = dateStr.trim().replace(' ', 'T');
-            if (!formatted.endsWith('Z') && !formatted.includes('+')) {
-                formatted += 'Z';
+        // Fetch RSS via reliable open CORS proxy and parse XML natively
+        async function fetchAndParseRSS(feedUrl) {
+            const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(feedUrl)}`;
+            try {
+                const response = await fetch(proxyUrl);
+                if (!response.ok) return [];
+                const xmlText = await response.text();
+                const parser = new DOMParser();
+                const xmlDoc = parser.parseFromString(xmlText, "text/xml");
+                const items = xmlDoc.querySelectorAll("item");
+                
+                let extractedItems = [];
+                items.forEach(item => {
+                    const title = item.querySelector("title")?.textContent || "";
+                    const link = item.querySelector("link")?.textContent || "";
+                    const description = item.querySelector("description")?.textContent || "";
+                    const pubDateStr = item.querySelector("pubDate")?.textContent || item.querySelector("dc\\:date")?.textContent || "";
+                    
+                    extractedItems.push({
+                        title: title,
+                        link: link,
+                        description: description.replace(/<[^>]*>?/gm, ''), // Strip HTML tags in desc
+                        pubDate: new Date(pubDateStr)
+                    });
+                });
+                return extractedItems;
+            } catch (err) {
+                console.error("Failed fetching feed:", feedUrl, err);
+                return [];
             }
-            const parsed = new Date(formatted);
-            // Fallback to standard Date parse if ISO replacement produced NaN
-            return isNaN(parsed.getTime()) ? new Date(dateStr) : parsed;
         }
 
-        function unlockAndLoad() {
+        async function unlockAndLoad() {
             const dateInputValue = document.getElementById('cutoff-date').value;
             if(!dateInputValue) return alert("Please select a date and time!");
             
             const cutoffDate = new Date(dateInputValue);
-            
-            // Calculate 1 month prior to the cutoff date
             const oneMonthPriorDate = new Date(cutoffDate);
             oneMonthPriorDate.setMonth(oneMonthPriorDate.getMonth() - 1);
             
-            // UI Transition
             document.getElementById('gatekeeper').style.display = 'none';
             document.getElementById('dashboard').style.display = 'block';
 
-            // Feeds list (all enforcing HTTPS)
+            // High-reliability feed list
             const feeds = [
                 "https://feeds.bbci.co.uk/sport/athletics/rss.xml",
                 "https://athleticsweekly.com/feed",
                 "https://worldathletics.org/news/rss",
-                "https://www.theguardian.com/sport/athletics/rss",
-                "https://www.watchathletics.com/rss/news/",
-                "https://www.skysports.com/rss/12040",
-                "https://www.independent.co.uk/sport/rss"
+                "https://www.theguardian.com/sport/athletics/rss"
             ];
 
             const athleticsKeywords = [
@@ -120,76 +126,58 @@
             ];
 
             const container = document.getElementById('news-feed');
-            document.getElementById('status').innerText = `Loading feeds securely...`;
+            document.getElementById('status').innerText = `Fetching live articles...`;
 
-            const fetchPromises = feeds.map(feed => 
-                fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(feed)}`)
-                .then(res => res.json())
-                .then(data => (data && data.items) ? data.items : [])
-                .catch(err => { 
-                    console.error("Error fetching feed: " + feed, err); 
-                    return []; 
-                })
-            );
+            // Parallel fetching without external API key limits
+            const feedPromises = feeds.map(url => fetchAndParseRSS(url));
+            const results = await Promise.all(feedPromises);
+            let allArticles = results.flat();
 
-            Promise.all(fetchPromises).then(allFeedResults => {
-                let allArticles = allFeedResults.flat();
+            allArticles.sort((a, b) => b.pubDate - a.pubDate);
 
-                // Safely sort using parseRSSDate
-                allArticles.sort((a, b) => {
-                    const dateA = parseRSSDate(a.pubDate);
-                    const dateB = parseRSSDate(b.pubDate);
-                    return dateB - dateA;
-                });
+            container.innerHTML = ''; 
+            document.getElementById('status').innerText = `Showing articles between ${oneMonthPriorDate.toLocaleDateString()} and ${cutoffDate.toLocaleString()}`;
 
-                container.innerHTML = ''; 
-                document.getElementById('status').innerText = `Showing articles between ${oneMonthPriorDate.toLocaleDateString()} and ${cutoffDate.toLocaleString()}`;
+            let visibleCount = 0;
 
-                let visibleCount = 0;
+            allArticles.forEach(item => {
+                const articleDate = item.pubDate;
+                const titleText = (item.title || "").toLowerCase();
+                const descText = (item.description || "").toLowerCase();
+                const fullText = titleText + " " + descText;
 
-                allArticles.forEach(item => {
-                    const articleDate = parseRSSDate(item.pubDate); 
-                    const titleText = (item.title || "").toLowerCase();
-                    const descText = (item.description || "").toLowerCase();
-                    const fullText = titleText + " " + descText;
+                const itemLink = item.link || "";
+                const isAthleticsFeed = itemLink.includes("athletics") || itemLink.includes("worldathletics") || itemLink.includes("bbc");
+                const matchesKeyword = athleticsKeywords.some(keyword => fullText.includes(keyword));
 
-                    const itemLink = item.link || "";
-                    const isAthleticsFeed = itemLink.includes("athletics") || itemLink.includes("runblogrun");
-                    const matchesKeyword = athleticsKeywords.some(keyword => fullText.includes(keyword));
+                const isValidDate = !isNaN(articleDate.getTime());
 
-                    // Check if date parsing succeeded
-                    const isValidDate = !isNaN(articleDate.getTime());
+                // SPOILER & 1-MONTH RANGE FILTER
+                if (isValidDate && (isAthleticsFeed || matchesKeyword) && articleDate <= cutoffDate && articleDate >= oneMonthPriorDate) {
+                    visibleCount++;
+                    
+                    let sourceName = "Athletics News";
+                    if (itemLink.includes("bbc.co.uk")) sourceName = "BBC Sport";
+                    else if (itemLink.includes("athleticsweekly.com")) sourceName = "Athletics Weekly";
+                    else if (itemLink.includes("worldathletics.org")) sourceName = "World Athletics";
+                    else if (itemLink.includes("theguardian.com")) sourceName = "The Guardian";
 
-                    // SPOILER & 1-MONTH RANGE FILTER
-                    if (isValidDate && (isAthleticsFeed || matchesKeyword) && articleDate <= cutoffDate && articleDate >= oneMonthPriorDate) {
-                        visibleCount++;
-                        
-                        let sourceName = "General Sport";
-                        if (itemLink.includes("bbc.co.uk")) sourceName = "BBC Sport";
-                        else if (itemLink.includes("athleticsweekly.com")) sourceName = "Athletics Weekly";
-                        else if (itemLink.includes("worldathletics.org")) sourceName = "World Athletics";
-                        else if (itemLink.includes("theguardian.com")) sourceName = "The Guardian";
-                        else if (itemLink.includes("skysports.com")) sourceName = "Sky Sports";
-                        else if (itemLink.includes("independent.co.uk")) sourceName = "The Independent";
-                        else if (itemLink.includes("watchathletics.com")) sourceName = "Watch Athletics";
-
-                        const card = document.createElement('div');
-                        card.className = 'card';
-                        card.innerHTML = `
-                            <span style="background: #005bc5; color: #fff; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; text-transform: uppercase;">Athletics</span>
-                            <h3 style="margin-top: 8px;">${item.title}</h3>
-                            <p>${item.description || ''}</p>
-                            <p><em>Source: ${sourceName} | Published: ${articleDate.toLocaleString()}</em></p>
-                            <a href="${itemLink}" target="_blank">Read Article ↗</a>
-                        `;
-                        container.appendChild(card);
-                    }
-                });
-
-                if(visibleCount === 0) {
-                    container.innerHTML = "<p>No articles found within the 1-month window prior to your cutoff time. Safe from spoilers!</p>";
+                    const card = document.createElement('div');
+                    card.className = 'card';
+                    card.innerHTML = `
+                        <span style="background: #005bc5; color: #fff; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; text-transform: uppercase;">${sourceName}</span>
+                        <h3 style="margin-top: 8px;">${item.title}</h3>
+                        <p>${item.description ? item.description.substring(0, 180) + '...' : ''}</p>
+                        <p><em>Published: ${articleDate.toLocaleString()}</em></p>
+                        <a href="${itemLink}" target="_blank">Read Article ↗</a>
+                    `;
+                    container.appendChild(card);
                 }
             });
+
+            if(visibleCount === 0) {
+                container.innerHTML = "<p>No articles found within the 1-month window prior to your cutoff time. Safe from spoilers!</p>";
+            }
         }
     </script>
 </body>
