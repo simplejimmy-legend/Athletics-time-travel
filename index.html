@@ -112,13 +112,12 @@
 
             // High-reliability feed list
             const feeds = [
-    "https://feeds.bbci.co.uk/sport/athletics/rss.xml",
-    "https://news.google.com/rss/search?q=site:bbc.co.uk/sport/athletics&hl=en-GB&gl=GB&ceid=GB:en",
-    "https://athleticsweekly.com/feed",
-    "https://worldathletics.org/news/rss",
-    "https://www.theguardian.com/sport/athletics/rss"
-];
-
+                "https://feeds.bbci.co.uk/sport/athletics/rss.xml",
+                "https://news.google.com/rss/search?q=site:bbc.co.uk/sport/athletics&hl=en-GB&gl=GB&ceid=GB:en",
+                "https://athleticsweekly.com/feed",
+                "https://worldathletics.org/news/rss",
+                "https://www.theguardian.com/sport/athletics/rss"
+            ];
 
             const athleticsKeywords = [
                 "athletics", "track and field", "marathon", "sprint", "100m", "200m", "400m", 
@@ -149,7 +148,7 @@
                 const fullText = titleText + " " + descText;
 
                 const itemLink = item.link || "";
-                const isAthleticsFeed = itemLink.includes("athletics") || itemLink.includes("worldathletics") || itemLink.includes("bbc");
+                const isAthleticsFeed = itemLink.includes("athletics") || itemLink.includes("worldathletics") || itemLink.includes("bbc") || itemLink.includes("google.com");
                 const matchesKeyword = athleticsKeywords.some(keyword => fullText.includes(keyword));
 
                 const isValidDate = !isNaN(articleDate.getTime());
@@ -158,17 +157,21 @@
                 if (isValidDate && (isAthleticsFeed || matchesKeyword) && articleDate <= cutoffDate && articleDate >= oneMonthPriorDate) {
                     visibleCount++;
                     
+                    // Source Name Detection (including Google News BBC feed)
                     let sourceName = "Athletics News";
-if (itemLink.includes("bbc.co.uk") || itemLink.includes("news.google.com")) sourceName = "BBC Sport";
-else if (itemLink.includes("athleticsweekly.com")) sourceName = "Athletics Weekly";
-else if (itemLink.includes("worldathletics.org")) sourceName = "World Athletics";
-else if (itemLink.includes("theguardian.com")) sourceName = "The Guardian";
+                    if (itemLink.includes("bbc.co.uk") || itemLink.includes("news.google.com")) sourceName = "BBC Sport";
+                    else if (itemLink.includes("athleticsweekly.com")) sourceName = "Athletics Weekly";
+                    else if (itemLink.includes("worldathletics.org")) sourceName = "World Athletics";
+                    else if (itemLink.includes("theguardian.com")) sourceName = "The Guardian";
+
+                    // Clean up trailing "- BBC Sport" from Google News titles
+                    let cleanTitle = item.title.replace(/\s*-\s*BBC Sport$/i, '');
 
                     const card = document.createElement('div');
                     card.className = 'card';
                     card.innerHTML = `
                         <span style="background: #005bc5; color: #fff; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; text-transform: uppercase;">${sourceName}</span>
-                        <h3 style="margin-top: 8px;">${item.title}</h3>
+                        <h3 style="margin-top: 8px;">${cleanTitle}</h3>
                         <p>${item.description ? item.description.substring(0, 180) + '...' : ''}</p>
                         <p><em>Published: ${articleDate.toLocaleString()}</em></p>
                         <a href="${itemLink}" target="_blank">Read Article ↗</a>
